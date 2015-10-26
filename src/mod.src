@@ -1,0 +1,6 @@
+#!/bin/bash
+
+module unload openmpi/gcc/64/1.6.5
+module unload languages/gcc-4.8.1
+module load intel-mpi/64/4.1.0/024
+module load languages/intel-compiler-16

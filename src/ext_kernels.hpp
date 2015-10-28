@@ -1,3 +1,31 @@
+#pragma once 
+
+#include <stdbool.h>
+#include "ext_shared.hpp"
+
+void initialise_device_memory(void);
+void zero_edge_flux_buffers(void);
+void zero_flux_moments_buffer(void);
+void zero_flux_in_out(void);
+void zero_scalar_flux(void);
+void calc_inner_source(void);
+void calc_outer_source(void);
+void calc_scattering_cross_section(void);
+void calc_dd_coefficients(void);
+void calc_time_delta(void);
+void calc_denominator(void);
+void calc_total_cross_section(void);
+
+void store_scalar_flux(double* to);
+
+bool check_convergence(
+		double* oldval, 
+		double* newval, 
+		double epsi, 
+		unsigned int *groups_todo, 
+		unsigned int *num_groups_todo, 
+		bool inner);
+
 // Calculate the inverted denominator for all the energy groups
 template <class Device> 
 struct calc_denominator_kernel
@@ -36,7 +64,7 @@ struct calc_denominator_kernel
     KView mu;
     KView dd_j;
     KView dd_k;
-}
+};
 
 // Calculate the time delta
 template <class Device>
@@ -60,7 +88,7 @@ struct calc_time_delta_kernel
     double dt; 
     KView time_delta; 
     KView velocity;
-}
+};
 
 // Calculate the diamond difference coefficients
 template <class Device>
@@ -80,7 +108,9 @@ struct calc_dd_coefficients_kernel
     KOKKOS_INLINE_FUNCTION
         void operator() (const int index) const
         {
-            //for(int a = 0; a < nang; ++a)
+            if(index >= nang) return;
+
+            int a = index;
             dd_j(a) = (2.0/dy)*eta(a);
             dd_k(a) = (2.0/dz)*xi(a);
         }
@@ -89,11 +119,12 @@ struct calc_dd_coefficients_kernel
     double dx; 
     double dy; 
     double dz;
+    double dd_i;
     KView dd_j; 
     KView dd_k; 
     KView eta; 
     KView xi;
-}
+};
 
 // Calculate the total cross section from the spatial mapping
 template <class Device>
@@ -104,18 +135,17 @@ struct calc_total_cross_section_kernel
 
     calc_total_cross_section_kernel(int ng, int nx, int ny, int nz,
             KView total_cross_section, KView xs, KView mat)
-        : ng(ng), nx(nx), ny(ny), nz(nz), xs(xs), mat(mat)
+        : ng(ng), nx(nx), ny(ny), nz(nz), xs(xs), mat(mat),
           total_cross_section(total_cross_section) {}
-
 
     KOKKOS_INLINE_FUNCTION
         void operator() (const int index) const
         {
-            // for(int k = 0; k < nz; ++k)
-            //     for(int j = 0; j < ny; ++j)
-            //         for(int i = 0; i < nx; ++i)
-            //             for(int g = 0; g < ng; ++g)
-            total_cross_section(g,i,j,k) = xs(mat(i,j,k)-1,g);
+            if(index > ng*nx*ny*nz) return;
+
+            int c = index / ng;
+            int g = index % ng;
+            total_cross_section(g,c) = xs(mat(c)-1,g);
         }
 
     int ng; 
@@ -125,7 +155,7 @@ struct calc_total_cross_section_kernel
     KView total_cross_section; 
     KView xs; 
     KView mat;
-}
+};
 
 template <class Device>
 struct calc_scattering_cross_section_kernel
@@ -141,12 +171,12 @@ struct calc_scattering_cross_section_kernel
     KOKKOS_INLINE_FUNCTION
         void operator() (const int index) const
         {
-            // for(unsigned int g = 0; g < ng; ++g)
-            //     for (unsigned int k = 0; k < nz; k++)
-            //         for (unsigned int j = 0; j < ny; j++)
-            //             for (unsigned int i = 0; i < nx; i++)
-            //                 for (unsigned int l = 0; l < nmom; l++)
-            scat_cs(l,i,j,k,g) = gg_cs(mat(i,j,k)-1,l,g,g);
+            if(index >= ng*nz*ny*nx*nmom) return;
+
+            int l = index % nmom;
+            int c = (index / nmom) % nx*ny*nz;
+            int g = (index / nmom*nx*ny*nz);
+            scat_cs(l,c,g) = gg_cs(mat(c)-1,l,g,g);
         }
 
     int nmom;
@@ -157,7 +187,7 @@ struct calc_scattering_cross_section_kernel
     KView scat_cs;
     KView gg_cs;
     KView mat;
-}
+};
 
 // Calculate the outer source
 template <class Device>
@@ -166,23 +196,23 @@ struct calc_outer_source_kernel
     typedef Device device_type;
     typedef Kokkos::View<double*, Device> KView;
 
-    calc_outer_source_kernel(int nx, int ny, int nz, int ng, int nmom,
-            KView g2g_souce, KView fixed_source, KView gg_cs,
-            KView mat, KView scalar_flux, KView scalar_mom,
+    calc_outer_source_kernel(int nx, int ny, int nz, int ng, 
+            int nmom, int cmom, KView g2g_souce, KView fixed_source, 
+            KView gg_cs, KView mat, KView scalar_flux, KView scalar_mom,
             KView lma)
         : nx(nx), ny(ny), nz(nz), ng(ng), nmom(nmom), 
-        g2g_souce(g2g_souce), fixed_source(fixed_source), 
+        g2g_source(g2g_source), fixed_source(fixed_source), 
         gg_cs(gg_cs), mat(mat), scalar_flux(scalar_flux), 
         scalar_mom(scalar_mom), lma(lma) {}
 
     KOKKOS_INLINE_FUNCTION
         void operator() (const int index) const
         {
-            // for (unsigned int g1 = 0; g1 < ng; g1++)
-            //    for(int k = 0; k < nz; ++k)
-            //        for(int j = 0; j < ny; ++j)
-            //            for(int i = 0; i < nx; ++i)
-            g2g_source(0,i,j,k,g1) = fixed_source(i,j,k,g1);
+            if(index >= ng*nz*ny*nx) return;
+
+            int c = index % nx*ny*nz;
+            int g1 = index / nx*ny*nz;
+            g2g_source(0,c,g1) = fixed_source(c,g1);
 
             for (unsigned int g2 = 0; g2 < ng; g2++)
             {
@@ -191,7 +221,7 @@ struct calc_outer_source_kernel
                     continue;
                 }
 
-                g2g_source(0,i,j,k,g1) += gg_cs(mat(i,j,k)-1,0,g2,g1) * scalar_flux(g2,i,j,k);
+                g2g_source(0,c,g1) += gg_cs(mat(c)-1,0,g2,g1) * scalar_flux(g2,c);
 
                 unsigned int mom = 1;
                 for (unsigned int l = 1; l < nmom; l++)
@@ -201,8 +231,8 @@ struct calc_outer_source_kernel
                         // TODO: CHECK WHY THIS CONDITION WAS NECESSARY
                         if(mom < (cmom-1))
                         {
-                            g2g_source(mom,i,j,k,g1) += gg_cs(mat(i,j,k)-1,l,g2,g1) 
-                                * scalar_mom(g2,mom-1,i,j,k);
+                            g2g_source(mom,c,g1) += gg_cs(mat(c)-1,l,g2,g1) 
+                                * scalar_mom(g2,mom-1,c);
                         }
 
                         mom++;
@@ -216,14 +246,15 @@ struct calc_outer_source_kernel
     int nz;
     int ng;
     int nmom;
-    KView g2g_souce;
+    int cmom;
+    KView g2g_source;
     KView fixed_source;
     KView gg_cs;
     KView mat;
     KView scalar_flux;
     KView scalar_mom;
     KView lma;
-}
+};
 
 // Calculate the inner source
 template <class Device>
@@ -234,7 +265,7 @@ struct calc_inner_source_kernel
 
     calc_inner_source_kernel(int nx, int ny, int nz, int ng,
             KView source, KView g2g_source, KView scat_cs, 
-            KView scalar_flux, KView source, KView scalar_mom,
+            KView scalar_flux, KView scalar_mom,
             KView lma)
         : nx(nx), ny(ny), nz(nz), ng(ng), source(source), 
         g2g_source(g2g_source), scat_cs(scat_cs), 
@@ -271,9 +302,8 @@ struct calc_inner_source_kernel
     KView g2g_source;
     KView scat_cs;
     KView scalar_flux;
-    KView source;
     KView scalar_mom;
-    KView lma
+    KView lma;
 }
 
 template <class Device>
@@ -369,35 +399,26 @@ struct zero_scalar_flux_kernel
     KView scalar_flux;
 }
 
-int check_convergence(
-        double *old, 
-        double *new, 
-        double epsi, 
-        unsigned int *groups_todo, 
-        unsigned int *num_groups_todo, 
-        int inner)
+template <class Device>
+struct check_convergence_kernel
 {    
     typedef Device device_type;
     typedef Kokkos::View<double*, Device> KView;
     typedef Kokkos::View<int*, Device> KViewInteger;
 
-    int r = 1;
-    int ngt = 0;
-    //for (unsigned int g = 0; g < ng; g++)
-
     check_convergence(int g, int ng, int nx, int ny, int nz, 
-            bool inner, double epsi, KView new, KView old)
-        : ng(ng), nx(nx), ny(ny), nz(nz), 
-        inner(inner), epsi(epsi), new(new), old(old) {}
+            bool inner, double epsi, KView newval, KView oldval, KViewInteger r)
+        : ng(ng), nx(nx), ny(ny), nz(nz),  r(r),
+        inner(inner), epsi(epsi), newval(newval), oldval(oldval) {}
 
     KOKKOS_INLINE_FUNCTION
         void operator() (const int index) const
         {
             if(!*r) break; // Drop all threads for group once tolerance exceeded
 
-            double val = (fabs(old[g+(ng*index)] > tolr))
-                ? fabs(new[g+(ng*index)]/old[g+(ng*index)] - 1.0)
-                : fabs(new[g+(ng*index)] - old[g+(ng*index)]);
+            double val = (fabs(oldval[g+(ng*index)] > tolr))
+                ? fabs(newval[g+(ng*index)]/oldval[g+(ng*index)] - 1.0)
+                : fabs(newval[g+(ng*index)] - oldval[g+(ng*index)]);
 
             if (val > epsi)
             {
@@ -418,8 +439,8 @@ int check_convergence(
     int nz;
     bool inner;
     double epsi;
-    KView new;
-    KView old;
+    KView newval;
+    KView oldval;
     KViewInteger r;
 }
 

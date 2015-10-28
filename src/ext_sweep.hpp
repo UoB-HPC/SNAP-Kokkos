@@ -1,10 +1,9 @@
 #include <stdlib.h>
 
-#include "ext_sweep.h"
-#include "ext_macros.h"
-#include "ext_kernels.h"
-#include "ext_problem.h"
-#include "ext_profiler.h"
+#include "ext_shared.hpp"
+#include "ext_kernels.hpp"
+#include "ext_problem.hpp"
+#include "ext_profiler.hpp"
 
 void sweep_octant(
         const unsigned int timestep, 

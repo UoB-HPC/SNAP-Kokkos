@@ -1,4 +1,4 @@
-#include "ext_macros.h"
+#include "ext_shared.hpp"
 
 // Entry point for completing the solve
 void ext_solve_(

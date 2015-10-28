@@ -4,9 +4,9 @@
 void compute_sweep_order(int** num_cells, float** cells)
 {
     unsigned int nplanes = ichunk + ny + nz - 2;
-    *num_cells = (int*)malloc(nplanes*sizeof(int), 64);
-    *cells = (int*)malloc(3*nz*ny*ichunk*sizeof(int), 64);
-    int* tmp_indices = (int*)malloc(nplanes*sizeof(int), 64);
+    *num_cells = (int*)malloc(nplanes*sizeof(int));
+    *cells = (int*)malloc(3*nz*ny*ichunk*sizeof(int));
+    int* tmp_indices = (int*)malloc(nplanes*sizeof(int));
 
     for(int ii = 0; ii < nplanes; ++ii)
     {
@@ -94,6 +94,7 @@ void sweep_octant(
     for (unsigned int d = 0; d < ndiag; d++)
     {
         int ncells = num_cells[d];
+        int n = ncells*num_groups_todo*nang;
         sweep_cell(istep, jstep, kstep, oct, l_flux_in, l_flux_out,
                 &(cells[cells_processed]), groups_todo, num_groups_todo, ncells);
         cells_processed += ncells;

@@ -2,20 +2,23 @@
 # Build SNAP
 #
 
+default: build
+
 # User defined parameters
 DBG 	 	= no
 PROFILER 	= yes
 COPTION  	= 
 FOPTION  	= 
 OPENMP 	 	= -fopenmp
-TARGET 	 	= snap
-CXX	        = cc
+EXE 	 	= snap
+TARGET	    = OMP
+CXX	        = CC
 FORTRAN  	= ftn
 KOKKOS_PATH = ../kokkos_src
 
 # Enables debugging mode
 ifeq ($(DBG),yes)
-  #TARGET = snap_db
+  #EXE = snap_db
   FFLAGS = -g -O0 -check bounds -traceback  $(FOPTION)
   #FFLAGS = -O0 -g -C -Mchkstk -Ktrap=fp -Mchkfpstk -Mchkptr 
   CFLAGS = -g -O0 -debug all -traceback  $(COPTION)
@@ -54,23 +57,19 @@ endif
 
 .SUFFIXES:	.f90 .o
 
+EXT_OBJS = ext_sweep.o ext_core.o ext_kernels.o ext_profiler.o
+
 OBJS = global.o snap_main.o utils.o version.o plib.o geom.o sn.o \
 	   data.o control.o input.o setup.o dealloc.o translv.o solvar.o \
 	   outer.o expxs.o inner.o sweep.o octsweep.o dim1_sweep.o dim3_sweep.o \
 	   output.o time.o mms.o $(EXT_OBJS)
-
-EXT_OBJS = ext_sweep.o ext_core.o ext_kernels.o ext_profiler.o
 
 SRCS = global.f90 snap_main.f90 utils.f90 version.f90 plib.f90 geom.f90 \
 	   sn.f90 data.f90 control.f90 input.f90 setup.f90 dealloc.f90 \
 	   translv.f90 solvar.f90 outer.f90 expxs.f90 inner.f90 sweep.f90 \
 	   octsweep.f90 dim1_sweep.f90 dim3_sweep.f90 output.f90 time.f90 mms.f90
 
-include $(KOKKOS_PATH)/Makefile.kokkos
-
-$(TARGET) :	$(OBJS) $(KOKKOS_LINK_DEPENDS)
-	$(FORTRAN) $(KOKKOS_LD_FLAGS) $(FFLAGS) $(FFLAG2) $(KOKKOS_LIBS) -o $@ $(OBJS)
-
+ext_init.o:	ext_kernels.h
 snap_main.o :	global.o utils.o version.o input.o setup.o output.o time.o \
 	dealloc.o plib.o control.o
 utils.o :	global.o dealloc.o plib.o
@@ -102,6 +101,13 @@ output.o :	global.o geom.o sn.o data.o control.o utils.o solvar.o \
 time.o :	global.o
 mms.o:	global.o geom.o sn.o data.o control.o plib.o
 
+include $(KOKKOS_PATH)/Makefile.kokkos
+
+build: $(EXE)
+
+$(EXE) : Makefile $(OBJS) $(KOKKOS_LINK_DEPENDS)
+	$(FORTRAN) $(KOKKOS_LD_FLAGS) $(FFLAGS) $(FFLAG2) $(KOKKOS_LIBS) -o $@ $(OBJS)
+
 #
 # Fortran rule
 #
@@ -109,12 +115,10 @@ mms.o:	global.o geom.o sn.o data.o control.o plib.o
 	$(FORTRAN) $(FFLAGS) -c $<
 
 #
-# C rule
+# CPP rule
 #
-%.o:	%.cpp $(KOKKOS_CPP_DEPENDS) Makefile ext_sweep.h
+%.o:	%.cpp $(KOKKOS_CPP_DEPENDS) Makefile ext_sweep.hpp
 	$(CXX) $(KOKKOS_CXXFLAGS) $(KOKKOS_CPPFLAGS) $(CXXFLAGS) -c $< $(CXXFLAGS2)
-
-ext_init.o:	ext_kernels.h
 
 #
 # Cleanup
@@ -135,5 +139,5 @@ count:
 # Link compiled files only. No recompile.
 #
 link:
-	$(FORTRAN) $(FFLAGS) $(FFLAG2) -o $(TARGET) $(OBJS)
+	$(FORTRAN) $(FFLAGS) $(FFLAG2) -o $(EXE) $(OBJS)
 
